@@ -6,10 +6,110 @@ Created on Wed Jun 16 16:20:34 2021
 @author: matthew
 """
 
+#%%
+from tensorflow import keras
 
+
+class CustomSaver(keras.callbacks.Callback):
+    
+    """Ideally model_output_dir could be set as a class variable in __init__, but I haven't worked out how to modify __init__
+    and all the methods that it calls, without just copying the whole thing here.  """     
+    
+    def on_epoch_end(self, epoch, logs={}):                                                                 # overwrite the on_epoch_end default metho in the callback class.  
+        self.model.encoder.save(str(self.model_output_dir / f"encoder_epoch_{epoch:03d}"))                  # model_output_dir will have to have been set.  
+        self.model.decoder.save(str(self.model_output_dir / f"decoder_epoch_{epoch:03d}"))
+
+#%% train a vae from a directoty full of numpy files.  
+import tensorflow
+
+class numpy_sequence(tensorflow.keras.utils.Sequence):                                                                                  # inheritance not tested like ths.  
+        
+    def __init__(self, file_list, batch_size):                                          # constructor
+        """
+        Inputs:
+            file_list | list of strings or paths | locations of numpy files of data.  
+            batch_size | int | number of data for each batch.  Note tested if larger than the number of data in a single file.  
+        """
+        self.file_list = file_list
+        self.batch_size = batch_size
+
+    def __len__(self):                                                      # number of batches in an epoch
+        """As one large file (e.g. 1000 data) can't be used as a batch on a GPU (but maybe on a CPU?), then 
+        this Sequence will break each file into a batch.  """
+        
+        import numpy as np
+        n_files = len(self.file_list)                                                           # get the number of datat files.  
+        n_data_per_file = np.load(self.file_list[0])['X'].shape[0]                              # get the number of data in a file (assumed to be the same for all files)
+        n_batches_per_file = int(np.ceil(n_data_per_file / self.batch_size))                    # the number of batches required to cover every data in the file.  
+        n_batches = n_files * n_batches_per_file
+        return n_batches
+
+    def __getitem__(self, idx):                                             # iterates over the data and returns a complete batch, index is a number upto the number of batches set by __len__, with each number being used once but in a random order.  
+        
+        import numpy as np
+        # repeat of __len__ to get info about batch sizes etc, probably a better way to do this.  
+        n_files = len(self.file_list)                                                      # get the number of data files.  
+        n_data_per_file = np.load(self.file_list[0])['X'].shape[0]                         # get the number of data in a file (assumed to be the same for all files)
+        n_batches_per_file = int(np.ceil(n_data_per_file / self.batch_size))               # the number of batches required to cover every data in the file.  
+        n_batches = n_files * n_batches_per_file
+        
+        # deal with files and batches (convert idx to a file number and batch number).  
+        n_file, n_batch = divmod(idx, n_batches_per_file)                                   # idx tells us which batch, but that needs mapping to a file, and to which batch in that file.  
+        data = np.load(self.file_list[n_file])                                              # load the correct numpy file.  
+        X = data['X']                                                                       # extract X from this (which is needed for the vae)
+        
+        # Open the correct file and batch, which depends on if it's the last batch for a file (as care needed to make sure it's the same size as all batches).  
+        if n_batch == (n_batches_per_file - 1):                                             # the last batch may not have enough data for it, so is more complex to prepare
+            X_unused = np.copy(X[n_batch * self.batch_size :, ])                            # get all the data not used in  batches so far, and make part of a batch with it
+            n_required = self.batch_size - X_unused.shape[0]                                # find out how short of a batch we are.  
+            extra_data_args = np.arange(n_batch * self.batch_size)                          # get the index of all the data that has been used in the previous batches.  
+            np.random.shuffle(extra_data_args)                                              # shuffle it
+            X_repeated = np.copy(X[extra_data_args[:n_required]], )                         # and make part of a batch with data that the network has already seen this epoch (ie repeated)
+            return np.concatenate((X_unused, X_repeated), axis = 0)                         # merge the data that make an incomplete batch with some of the repeated data to make the final batch the right size.  
+    
+        else:
+            return X[n_batch*self.batch_size : (n_batch+1) *self.batch_size, ]              # return part of X of size batch_size
+            
+      
+        
+      
+############################################################################################################################################
+############################################################################################################################################
+###################################                                                                      ###################################
+###################################                         Plotting                                     ###################################
+###################################                                                                      ###################################
+############################################################################################################################################
+############################################################################################################################################      
+
+#%%
+
+def plot_data_and_predictions(X, Y, n_datas=10, outpath = None):
+    """Given 4d tensors of vae inputs and outputs, plot them.  
+    Inputs:
+        X | rank 4 numpy array | images in standard keras format.  Function assumes working with 1 channel data
+        Y | rank 4 numpy array | images in standard keras format.  Function assumes working with 1 channel data
+        n_data | int | number of iamges to show (as columns of the plot)
+    Returns:
+        figure
+    History:
+        2021_05_18 | MEG | Written
+        
+    """
+    import matplotlib.pyplot as plt
+    
+    f, axes = plt.subplots(2, n_datas)
+    for n_data in range(n_datas):
+        axes[0, n_data].imshow(X[n_data, :,:,0])
+        axes[1, n_data].imshow(Y[n_data, :,:,0])
+    if outpath != None:
+        f.savefig(outpath)
+
+#%%
 
 def plot_latent_space(vae_decoder, n=30, figsize=15, z0_limits = [-2, 2], z1_limits = [-2, 2], digit_size = 28, outpath = None):
     """
+    WARNING - WHAT ABOUT THE VERSION OF THIS IN 03_VAE_TESTER.PY
+    
     Inputs:
         vae | keras model | model to decode spaces in the 2D latent space into images.  
         n | int | number of images in each direction in the plot
