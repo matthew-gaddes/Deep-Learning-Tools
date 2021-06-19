@@ -83,7 +83,7 @@ class numpy_sequence(tensorflow.keras.utils.Sequence):                          
 
 #%%
 
-def plot_data_and_predictions(X, Y, n_datas=10, outpath = None):
+def plot_data_and_reconstructions(X, Y, n_datas=10, outpath = None):
     """Given 4d tensors of vae inputs and outputs, plot them.  
     Inputs:
         X | rank 4 numpy array | images in standard keras format.  Function assumes working with 1 channel data
