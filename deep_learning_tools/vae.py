@@ -160,6 +160,8 @@ def plot_data_in_latent_space(Z_xy, Y = None, Y_labels= None, outpath = None):
     """Given the 2d latent space positions of data that has been passed through the encoder of a VAE, plot them.  
     If labels are provided (Y), colour the points by label.  
     
+    NOTE:  It's noramlly best to use the interactive_2d_plot function to do this (from https://github.com/matthew-gaddes/interactive_2d_plot)/  
+    
     Inputs:
         Z_xy | rank 2 array | nx2, where n is the number of ponts.  
         Y | rank 1 or 2 | n or nx1, labels of the points, not one hot (so e.g. [0,1,2,1,2,4]), though should correct them if this is the case

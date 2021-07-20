@@ -6,63 +6,6 @@ Created on Mon Mar 22 16:27:44 2021
 @author: matthew
 """
 
-
-#%%
-def custom_range_for_CNN(r4_array, min_max, mean_centre = False):
-    """ Rescale a rank 4 array so that each channel's image lies in custom range
-    e.g. input with range of (-5, 15) is rescaled to (-125 125) or (-1 1) for use with VGG16.  
-    Designed for use with masked arrays.  
-    Inputs:
-        r4_array | r4 masked array | works with masked arrays?  
-        min_max | dict | 'min' and 'max' of range desired as a dictionary.  
-        mean_centre | boolean | if True, each image's channels are mean centered.  
-    Returns:
-        r4_array | rank 4 numpy array | masked items are set to zero, rescaled so that each channel for each image lies between min_max limits.  
-    History:
-        2019/03/20 | now includes mean centering so doesn't stretch data to custom range.  
-                    Instead only stretches until either min or max touches, whilst mean is kept at 0
-        2020/11/02 | MEG | Update so range can have a min and max, and not just a range
-        2021/01/06 | MEG | Upate to work with masked arrays.  Not test with normal arrays.
-        2021_06_08 | MEG | Make a copy from VUDL-Net_21 repo.  
-    """
-    import numpy as np
-    import numpy.ma as ma
-    
-    def expand_to_r4(r2_array, shape = (224,224)):
-        """
-        Calcaulte something for every image and channel in rank 4 data (e.g. 100x224x224x3 to get 100x3)
-        Expand new rank 2 to size of original rank 4 for elemtiwise operations
-        """
-        import numpy as np
-        
-        r4_array = r2_array[:, np.newaxis, np.newaxis, :]
-        r4_array = np.repeat(r4_array, shape[0], axis = 1)
-        r4_array = np.repeat(r4_array, shape[1], axis = 2)
-        return r4_array
-
-    
-    if mean_centre:
-        im_channel_means = ma.mean(r4_array, axis = (1,2))                                                  # get the average for each image (in all thre channels)
-        im_channel_means = expand_to_r4(im_channel_means, r4_array[0,:,:,0].shape)                                                   # expand to r4 so we can do elementwise manipulation
-        r4_array -= im_channel_means                                                                        # do mean centering    
-
-
-    im_channel_min = ma.min(r4_array, axis = (1,2))                                         # get the minimum of each image and each of its channels
-    im_channel_min = expand_to_r4(im_channel_min, r4_array[0,:,:,0].shape)                  # exapnd to rank 4 for elementwise applications
-    r4_array -= im_channel_min                                                              # set so lowest channel for each image is 0
-    
-    im_channel_max = ma.max(r4_array, axis = (1,2))                                         # get the maximum of each image and each of its channels
-    im_channel_max = expand_to_r4(im_channel_max, r4_array[0,:,:,0].shape)              # make suitable for elementwise applications
-    r4_array /= im_channel_max                                                              # should now be in range [0, 1]
-    
-    r4_array *= (min_max['max'] - min_max['min'])                                           # should now be in range [0, new max-min]
-    r4_array += min_max['min']                                                              # and now in range [new min, new max]        
-    r4_nparray = r4_array.filled(fill_value = 0)                                            # convert to numpy array, maksed incoherent areas are set to zero.  
-    
-    return r4_nparray  
-
-
-#%%
   
 
 
