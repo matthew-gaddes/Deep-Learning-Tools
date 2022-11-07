@@ -6,49 +6,150 @@ Created on Mon Mar 22 16:27:44 2021
 @author: matthew
 """
 
+import tensorflow as tf
+import pdb
+import numpy as np
+#%%
   
+  
+class save_all_metrics(tf.keras.callbacks.Callback):
+    """ Save the metrics (loss, accuracy etc) for each batch.  
+    Inputs:
+        metrics | list of strings | the names of the metrics we're intersted in.  
+        batch_metrics | dict | key is metric name, value is a list to store that metric for each epoch.  
+        average | boolean | if True, the tensorflow >=2.2 normal of averaging the batch loss across the epoch is done.  If False, report metrics for that batch
+    """
+    
+    def __init__(self, metrics, average = False):                                          # metrics is a list of the names of the metrics we want.  Batch metrics is a dict with a list for each metric's value after each batch.  
+    
+        batch_metrics = {}                                                                                                                  # dict to store metrics and their values for every batch
+        val_metrics = {}
+        for metrics_name in metrics:
+            batch_metrics[metrics_name] = []
+            val_metrics[f"val_{metrics_name}"] = []
+   
+        self.metrics = metrics
+        self.batch_metrics = batch_metrics
+        self.val_metrics = val_metrics
+        self.average = average
+        if average:
+            print(f"\nThe training metrics (loss etc.) that will be saved for each batch will be the tensorflow >= 2.2 onwards normal of the average for all batches that epoch.  \n")
+        else:
+            print(f"\nThe training metrics (loss etc.) that will be saved for each batch will not be the tensorflow >= 2.2 onwards normal of the average for all batches that epoch.  \n")
+        
+    
+    def on_train_batch_end(self, batch, logs=None):                                                                             # batch is just batch number.  
+        
+        for metric in self.metrics:         
+            if batch == 0:                                                                                                     # for the first batch, the batch loss and average batch loss are the same.  
+                self.batch_metrics[metric].append(logs[metric])
+            else:
+                if self.average == True:                                                                                       # if we're averaging, just take the tensorflow normal (averaged for that epoch) loss
+                    self.batch_metrics[metric].append(logs[metric])
+                else:                                                                                                          # otherwise we need to work out the loss for that batch                     
+                    self.batch_metrics[metric].append(((batch + 1) * logs[metric]) - np.sum(self.batch_metrics[metric]))       # rearranging of average equation to find the last value.  batch starts at 0 so add 1 to make it start at 1
+                    
+    def on_epoch_end(self, batch, logs=None):                                                         # every epoch, record the validation loss/accuracy
+        for metric in self.metrics:         
+            self.val_metrics[f"val_{metric}"].append(logs[f"val_{metric}"])
 
 
 #%%
 
-def plot_batchwise_history(history_dict, outpath = None):
-    """Given a dict of loss for each batch of training data and validation loss for the end of each epoch, plot them.   
-    Inputs:
-        history_dict | dict | usually history.history 
-        outpath | string | path to file, including .png extension.  
-    Returns
-        figure
-    History: 
-        2021_05_21 | MEG | Written
-    """
-    import numpy as np
-    import matplotlib.pyplot as plt
-    
-    #0: get the number of batches (and the xvales for plotting things)
-    n_epochs = len(history_dict['val_loss'])
-    n_batches =  int(len(history_dict['loss']) / n_epochs)                                  # number of batches of training data per epoch.  
-    
-    xvals_batches = np.arange(0, len(history_dict['loss']))                                         # x values for plotting training data, as there's (n_files * n_epochs) of these values
-    xvals_epochs = np.arange(-1, len(history_dict['loss']), n_batches)[1:]                    # x values for plotting validation data, n_epochs as only do the validation data once an epoch
+class training_figure_per_epoch(tf.keras.callbacks.Callback):
         
-    #1: Make the figure
-    f, ax = plt.subplots(1,1, figsize = (10,5))
-    ax.plot(xvals_batches, history_dict['loss'], label = 'Loss')
-    ax.plot(xvals_epochs, history_dict['val_loss'], label = 'Validation Loss')
+    def __init__(self, plotting_function, batch_metrics, epoch_metrics, metrics, title = 'Training metrics',
+                 two_column = False, out_path = None, y_epoch_start = 0):
+        self.plotting_function = plotting_function
+        self.batch_metrics = batch_metrics
+        self.epoch_metrics = epoch_metrics
+        self.metrics = metrics
+        self.title = title
+        self.two_column = two_column
+        self.out_path = out_path
+        self.y_epoch_start =y_epoch_start
     
-    # 2: formatting of the figure
-    ax.grid(True, alpha = 0.2, which = 'both')
+    def on_epoch_end(self, epoch, logs={}):                                                                 # overwrite the on_epoch_end default metho in the callback class.  
+        print(f"Plotting the training figure at the end of the epoch")
+        self.plotting_function(self.batch_metrics, self.epoch_metrics, self.metrics,
+                               f"{self.title}_epoch {epoch:02d}", self.two_column, self.out_path, self.y_epoch_start)
+            
 
-    ax.set_xlim([0, (xvals_epochs[-1]+1)])
-    ax.set_ylim(bottom = 0)
-    ax.set_xticks(np.arange(0, (n_batches * n_epochs)+1, n_batches))                                    #  change so a tick only after each epoch (and not each file)
-    ax.set_xticklabels(np.arange(0,n_epochs+1))                                                  # number ticks
-    ax.set_ylabel('Loss')
-    ax.set_xlabel('Epoch n')
-    plt.legend(loc = 'upper right')
+
+#%%
+
+def plot_all_metrics(batch_metrics, epoch_metrics, metrics = None, title = 'Training metrics', 
+                     two_column = False, out_path = None, y_epoch_start = 0):
+    """ Given a dict of metrics for every batch and for every epoch, plot the combination of the two.  
     
-    if outpath != None:
-        f.savefig(outpath)
+    Inputs:
+        batch_metrics | dist of lists | names of metrics are keys and list of metrics values are items.  There are as many entries as n_epochs * n _batches (i.e. for every batch that was used in training)
+        epoch_metrics | dict of lists | standard metrics saved each epoch by Keras.                       There are as many entries as n_epochs  
+        metrics | None or list | names of metrics to plot (i.e. so we don't have to plot all fo them).  If None, just plot all.
+        title | string | figure and window title.  
+        two_column | boolean | If True, plots are in two columns.  
+        y_epoch_start | float | epoch number to start y values of plot on (i.e. to crop out very different values in first epoch).  Can be fractions of an epoch.  
+    Returns:
+        Figure
+    History:
+        2021_11_11 | MEG | Written
+        2022_11_01 | MEG | Update so that y limits are adjusted to avoid first epoch values that are very different to rest
+        
+    """
+    
+    import matplotlib.pyplot as plt    
+    import numpy as np
+        
+    if metrics is None:                                                                                   # if no specific metrics are requested
+        metrics = list(batch_metrics.keys())                                                              # just get them all from the batch metrics
+    
+    n_losses_total = len(batch_metrics[list(batch_metrics.keys())[0]])
+    n_epochs = len(epoch_metrics[list(epoch_metrics.keys())[0]])                                            # get an item from the validation dict and see how long it is.  
+    n_batches = int(n_losses_total / n_epochs)                                                            # get the number of entries in the first item of the batch_metrics (which is epochs x n_batches), then divided by epochs to get n_batches
+    n_metrics = len(metrics)
+    
+    if two_column == False:
+        fig1, axes = plt.subplots(1, n_metrics, figsize = (28,7))                                           # many rows, one column
+    else:
+        fig1, axes = plt.subplots(int(np.ceil(n_metrics/2)), 2, figsize = (14,7))                           # seems to wor, first bit works out how many rows we need.  
+    fig1.canvas.manager.set_window_title(title)
+    
+    xvals_batch = np.arange(0, n_losses_total)                                                           # for every batch in every epoch, the xvalue to plot it at
+    xvals_epoch = xvals_batch[::-1][::n_batches][::-1]                                                      # for every epoch, the x value to plot it at (i.e. every n_epochs)
+    
+    
+    for plot_n, metric in enumerate(metrics):
+        ax = np.ravel(axes)[plot_n]                                                                     # get the ax to plot on
+        ax.scatter(xvals_batch, batch_metrics[metric], c = 'k', marker = '.', alpha = 0.5)              # plot for each batch
+        ax.scatter(xvals_epoch, epoch_metrics[f"val_{metric}"], c = 'r', marker = 'o')                           # plot for each epoch
+        ax.set_ylabel(metric)
+        ax.grid(True)
+
+        if 'accuracy' in metric:                                                                                        # accuracy should increase and can't get higher than 1.  Adjust lower limit
+            if (y_epoch_start != 0) or (y_epoch_start != 0.):
+                ax.set_ylim(bottom = batch_metrics[metric][xvals_batch[int(y_epoch_start * n_batches)]], top = 1)      # set y limits, note that upper can be the value after a certain number of epochs (i.e. so can crop out the first high values)
+            else:
+                ax.set_ylim(top = 1)      # set y limits, note that upper can be the value after a certain number of epochs (i.e. so can crop out the first high values)
+        else:                                                                                                           # loss should decrease and can't get lower than 0.  Adjust upper limi.t  
+            if (y_epoch_start != 0) or (y_epoch_start != 0.):
+                ax.set_ylim(bottom = 0, top = (batch_metrics[metric][xvals_batch[int(y_epoch_start * n_batches)]]))      # set y limits, note that upper can be the value after a certain number of epochs (i.e. so can crop out the first high values)
+            else:
+                ax.set_ylim(bottom = 0 )      # set y limits, note that upper can be the value after a certain number of epochs (i.e. so can crop out the first high values)
+                
+        ax.set_xlim(left = 0)
+        
+        if 'accuracy' in metric:                                                              # if accuracy is used in the metric, assume it's an accuracy and therefore
+            ax.set_ylim(top = 1)                                                              # maxes out at 1
+            
+        ax.set_xticks(xvals_epoch)                                                            # change so a tick only after each epoch (and not each file)
+        ax.set_xticklabels(np.arange(1,n_epochs+1, 1))                                          # number ticks
+        ax.set_xlabel('Epoch number')
+    
+    if two_column and (not (n_metrics/2).is_integer()):                                        # if its two column and we didn't have an even number of metrics, delete the bottom right (left over one)
+        np.ravel(axes)[-1].set_visible(False)
+        
+    if out_path is not None:
+        fig1.savefig(out_path)                                                                   # 
 
 #%%
 
