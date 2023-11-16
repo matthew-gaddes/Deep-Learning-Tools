@@ -8,6 +8,40 @@ Created on Wed Nov 30 14:27:04 2022
 
 import tensorflow as tf
 
+
+#%%
+
+
+class duplicate_model_remover(tf.keras.callbacks.Callback):
+    """ As the model checkpoint class saves the model with the best metric (i.e. validation loss) with 
+    the epoch number in the name, this function checks that multiple version of these large files
+    do not build up.  
+    
+    Inputs:
+        outdir | pathlib path | Directory that models are saved in.  
+        model_names | list of strings | names that models are being saved to, assumed to then be followed by _epoch_001.h5
+    Returns:
+        pass
+    History:
+        2023_11_16
+    """
+    
+    def __init__(self, outdir, model_names):
+        self.outdir = outdir
+        self.model_names = model_names
+        
+    def on_epoch_end(self, epoch, logs = None):                                                                 # overwrite the on_epoch_end default metho in the callback class.  
+        """ Delete all but the latest (highest epoch number) model files
+        """
+        import glob
+        import os
+        for model_name in self.model_names:
+            model_files = sorted(glob.glob(str(self.outdir / f"{model_name}_epoch_*.h5")))                  # get all the files at various epochs.  
+            if len(model_files) > 1:                                                                        # if there is more tha one item in the list
+                for model_file in model_files[:-1]:                                                         # go through all but the last item
+                    os.remove(model_file)                                                                   # and delete them.  
+
+
 #%%
 
 
